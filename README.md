@@ -3,6 +3,8 @@
 `ext` — a terminal picker for your clipboard history. Press a number, the item
 is back on your pasteboard, and you are back at the prompt.
 
+![ext, picking through a clipboard history](demo/demo.gif)
+
 ## install
 
 ```sh

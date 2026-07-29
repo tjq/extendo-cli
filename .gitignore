@@ -12,3 +12,6 @@ dist/
 
 # Finder metadata, which records directory listings and belongs in no repo.
 .DS_Store
+
+# The synthetic history the demo records against, rebuilt by gen_store.py.
+/demo/store/

@@ -93,21 +93,22 @@ func ProfilePath(k Kind, home string) (string, error) {
 
 // Render returns the managed block for a shell, ending in a newline. exePath is
 // the running binary: its directory goes on PATH, and its name decides whether
-// the block also needs an alias.
+// the block also needs an alias. key is the chord the picker is bound to; a
+// zero Key means DefaultKey.
 //
 // The path is used as given rather than resolved through its symlinks. A
 // Homebrew install is a link from a versioned Cellar directory into
 // /opt/homebrew/bin, and the link is the part that survives an upgrade.
 //
 // An Unknown shell renders nothing — there is no syntax to write it in.
-func Render(k Kind, exePath string) string {
+func Render(k Kind, exePath string, key Key) string {
 	if k == Unknown {
 		return ""
 	}
 
 	dir := filepath.Dir(exePath)
 
-	lines := []string{startMarker, managedNote, fileNote(k)}
+	lines := []string{startMarker, managedNote, fileNote(k, key)}
 
 	// The guard keeps a re-sourced profile from growing $PATH a copy at a time,
 	// which is what a bare export in an rc file does.
@@ -119,7 +120,7 @@ func Render(k Kind, exePath string) string {
 		lines = append(lines, fmt.Sprintf(`alias ext=%s`, quoted(exePath)))
 	}
 
-	lines = append(lines, binding(k, exePath)...)
+	lines = append(lines, binding(k, exePath, key)...)
 	lines = append(lines, endMarker, "")
 
 	return strings.Join(lines, "\n")
@@ -127,15 +128,17 @@ func Render(k Kind, exePath string) string {
 
 // fileNote records why the block lives in this particular file, since neither
 // choice is the obvious one.
-func fileNote(k Kind) string {
+func fileNote(k Kind, key Key) string {
 	if k == Bash {
 		return "# in ~/.bash_profile: a macOS terminal starts a login shell, which reads this file"
 	}
 
-	return "# in ~/.zshrc rather than ~/.zprofile: the ^G widget below needs an interactive shell"
+	return fmt.Sprintf(
+		"# in ~/.zshrc rather than ~/.zprofile: the %s widget below needs an interactive shell",
+		key.caret())
 }
 
-// binding returns the lines that put the picker on ctrl-G.
+// binding returns the lines that put the picker on key.
 //
 // Zsh gets a widget: the picker draws on the alt-screen and reads keys, so it
 // is handed the terminal directly, and `zle reset-prompt` redraws the line it
@@ -148,21 +151,21 @@ func fileNote(k Kind) string {
 // name — the alias branch in Render — left ctrl-G bound to something that does
 // not exist. The path also pins which ext the hotkey runs when another one sits
 // earlier on PATH, which the alias already did for the prompt.
-func binding(k Kind, exePath string) []string {
+func binding(k Kind, exePath string, key Key) []string {
 	target := quoted(exePath)
 
 	if k == Bash {
 		// bind takes the whole binding as one word, so the command it runs is
-		// wrapped in single quotes. The `\C-g` inside them is readline's
-		// spelling of ctrl-G and has to reach it with the backslash intact.
+		// wrapped in single quotes. The `\C-` inside them is readline's spelling
+		// of a control chord and has to reach it with the backslash intact.
 		return []string{fmt.Sprintf(`bind -x %s 2>/dev/null || true`,
-			singleQuoted(`"\C-g": `+target))}
+			singleQuoted(`"`+key.readline()+`": `+target))}
 	}
 
 	return []string{
 		fmt.Sprintf("_ext_picker() { %s </dev/tty >/dev/tty; zle reset-prompt }", target),
 		"zle -N _ext_picker",
-		"bindkey '^G' _ext_picker",
+		fmt.Sprintf("bindkey '%s' _ext_picker", key.caret()),
 	}
 }
 

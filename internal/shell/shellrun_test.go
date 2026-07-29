@@ -33,7 +33,7 @@ func writeBlock(t *testing.T, k Kind, exePath string) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "block.sh")
-	if err := os.WriteFile(path, []byte(Render(k, exePath)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(Render(k, exePath, DefaultKey)), 0o644); err != nil {
 		t.Fatalf("write block: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestRenderedBlocksParse(t *testing.T) {
 			out, err := runShell(t, sh, "-n", writeBlock(t, tc.kind, tc.exePath))
 			if err != nil {
 				t.Errorf("%s -n rejected the block: %v\n%s\n--- block ---\n%s",
-					tc.shell, err, out, Render(tc.kind, tc.exePath))
+					tc.shell, err, out, Render(tc.kind, tc.exePath, DefaultKey))
 			}
 		})
 	}
@@ -162,7 +162,7 @@ func TestBashBindingIsAcceptedAndRunsTheBinary(t *testing.T) {
 
 	exe := fakeExt(t, "ext-dev")
 
-	bind, command := bindParts(t, Render(Bash, exe))
+	bind, command := bindParts(t, Render(Bash, exe, DefaultKey))
 
 	if out, err := runShell(t, sh, "--norc", "-i", "-c", bind); err != nil {
 		t.Errorf("bash rejected %q: %v\n%s", bind, err, out)

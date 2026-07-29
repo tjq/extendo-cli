@@ -60,7 +60,7 @@ func pinProfile(t *testing.T, isInstalled bool) {
 		return
 	}
 
-	block := shell.Apply("", shell.Render(shell.Zsh, "/opt/homebrew/bin/ext"))
+	block := shell.Apply("", shell.Render(shell.Zsh, "/opt/homebrew/bin/ext", shell.DefaultKey))
 	if err := os.WriteFile(filepath.Join(home, ".zshrc"), []byte(block), 0o644); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}

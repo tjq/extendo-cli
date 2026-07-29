@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -88,22 +89,22 @@ func TestProfilePath(t *testing.T) {
 }
 
 func TestRenderZshGolden(t *testing.T) {
-	checkGolden(t, "zsh.golden", Render(Zsh, brewPath))
+	checkGolden(t, "zsh.golden", Render(Zsh, brewPath, DefaultKey))
 }
 
 func TestRenderBashGolden(t *testing.T) {
-	checkGolden(t, "bash.golden", Render(Bash, brewPath))
+	checkGolden(t, "bash.golden", Render(Bash, brewPath, DefaultKey))
 }
 
 // TestRenderAliasesOnlyWhenTheNameDiffers keeps `ext` meaning the binary the
 // block put on PATH. A build installed under another name needs the alias; the
 // ordinary install would have it shadow itself.
 func TestRenderAliasesOnlyWhenTheNameDiffers(t *testing.T) {
-	if strings.Contains(Render(Zsh, brewPath), "alias ext=") {
-		t.Errorf("block aliases ext over itself:\n%s", Render(Zsh, brewPath))
+	if strings.Contains(Render(Zsh, brewPath, DefaultKey), "alias ext=") {
+		t.Errorf("block aliases ext over itself:\n%s", Render(Zsh, brewPath, DefaultKey))
 	}
 
-	renamed := Render(Zsh, "/Users/x/go/bin/ext-dev")
+	renamed := Render(Zsh, "/Users/x/go/bin/ext-dev", DefaultKey)
 	if !strings.Contains(renamed, `alias ext="/Users/x/go/bin/ext-dev"`) {
 		t.Errorf("block does not alias a renamed binary:\n%s", renamed)
 	}
@@ -144,7 +145,7 @@ func TestBindingTargetsTheBinaryByPath(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			block := Render(tc.kind, tc.exePath)
+			block := Render(tc.kind, tc.exePath, DefaultKey)
 
 			if !strings.Contains(block, tc.expected) {
 				t.Errorf("block does not carry %q:\n%s", tc.expected, block)
@@ -165,7 +166,7 @@ func TestBindingTargetsTheBinaryByPath(t *testing.T) {
 // directory with a space in it is ordinary; the dollar sign is not, but the
 // escape costs nothing.
 func TestBindingQuotesAwkwardPaths(t *testing.T) {
-	block := Render(Zsh, "/Users/x/Application Support/ext$dev")
+	block := Render(Zsh, "/Users/x/Application Support/ext$dev", DefaultKey)
 
 	expected := `_ext_picker() { "/Users/x/Application Support/ext\$dev" </dev/tty >/dev/tty; zle reset-prompt }`
 	if !strings.Contains(block, expected) {
@@ -178,13 +179,13 @@ func TestBindingQuotesAwkwardPaths(t *testing.T) {
 }
 
 func TestRenderUnknownIsEmpty(t *testing.T) {
-	if got := Render(Unknown, brewPath); got != "" {
-		t.Errorf("Render(Unknown) = %q, expected empty", got)
+	if got := Render(Unknown, brewPath, DefaultKey); got != "" {
+		t.Errorf("Render(Unknown, DefaultKey) = %q, expected empty", got)
 	}
 }
 
 func TestApplyAppendsBelowExistingContent(t *testing.T) {
-	block := Render(Zsh, brewPath)
+	block := Render(Zsh, brewPath, DefaultKey)
 
 	got := Apply("export EDITOR=vim\n", block)
 
@@ -195,7 +196,7 @@ func TestApplyAppendsBelowExistingContent(t *testing.T) {
 }
 
 func TestApplyIsIdempotent(t *testing.T) {
-	block := Render(Zsh, brewPath)
+	block := Render(Zsh, brewPath, DefaultKey)
 
 	once := Apply("export EDITOR=vim\n", block)
 
@@ -205,7 +206,7 @@ func TestApplyIsIdempotent(t *testing.T) {
 }
 
 func TestApplyOnEmptyProfile(t *testing.T) {
-	block := Render(Zsh, brewPath)
+	block := Render(Zsh, brewPath, DefaultKey)
 
 	if got := Apply("", block); got != block {
 		t.Errorf("Apply on an empty profile = %q, expected the bare block", got)
@@ -216,10 +217,10 @@ func TestApplyOnEmptyProfile(t *testing.T) {
 // block that names its old directory has to go, and everything the user wrote
 // around it has to stay.
 func TestApplyReplacesStaleBlock(t *testing.T) {
-	stale := Apply("export EDITOR=vim\n", Render(Zsh, "/usr/local/bin/ext"))
+	stale := Apply("export EDITOR=vim\n", Render(Zsh, "/usr/local/bin/ext", DefaultKey))
 	stale += "\nexport PAGER=less\n"
 
-	fresh := Render(Zsh, brewPath)
+	fresh := Render(Zsh, brewPath, DefaultKey)
 
 	got := Apply(stale, fresh)
 
@@ -239,7 +240,7 @@ func TestApplyReplacesStaleBlock(t *testing.T) {
 }
 
 func TestRemoveRoundTrip(t *testing.T) {
-	block := Render(Zsh, brewPath)
+	block := Render(Zsh, brewPath, DefaultKey)
 
 	cases := []struct {
 		name     string
@@ -276,7 +277,7 @@ func TestRemoveRoundTrip(t *testing.T) {
 // where dropping its lines outright would leave the two halves stuck together
 // or a doubled blank line between them.
 func TestRemoveKeepsSurroundingContent(t *testing.T) {
-	installed := Apply("export EDITOR=vim\n", Render(Zsh, brewPath)) + "\nexport PAGER=less\n"
+	installed := Apply("export EDITOR=vim\n", Render(Zsh, brewPath, DefaultKey)) + "\nexport PAGER=less\n"
 
 	got, removed := Remove(installed)
 	if !removed {
@@ -307,7 +308,7 @@ func TestIsInstalled(t *testing.T) {
 		t.Error("IsInstalled reported a block in a profile that has none")
 	}
 
-	if !IsInstalled(Apply("", Render(Bash, brewPath))) {
+	if !IsInstalled(Apply("", Render(Bash, brewPath, DefaultKey))) {
 		t.Error("IsInstalled missed a block it just wrote")
 	}
 
@@ -315,5 +316,102 @@ func TestIsInstalled(t *testing.T) {
 	// not something Apply can splice, so it must not count as installed either.
 	if IsInstalled(startMarker + "\nexport PATH=/nowhere\n") {
 		t.Error("IsInstalled accepted a block with no end marker")
+	}
+}
+
+// TestParseKey covers the spellings a person might reach for, and the two
+// reasons ext turns one down: it cannot express the chord, or it will not take
+// the chord away from the terminal.
+func TestParseKey(t *testing.T) {
+	accepted := []struct {
+		name     string
+		spec     string
+		expected string
+	}{
+		{name: "ctrl dash", spec: "ctrl-t", expected: "ctrl-t"},
+		{name: "ctrl plus", spec: "ctrl+t", expected: "ctrl-t"},
+		{name: "control dash", spec: "control-t", expected: "ctrl-t"},
+		{name: "readline style", spec: "C-t", expected: "ctrl-t"},
+		{name: "caret style", spec: "^T", expected: "ctrl-t"},
+		{name: "bare letter", spec: "t", expected: "ctrl-t"},
+		{name: "uppercase", spec: "CTRL-T", expected: "ctrl-t"},
+		{name: "surrounding space", spec: "  ctrl-t  ", expected: "ctrl-t"},
+		{name: "the default", spec: "ctrl-g", expected: "ctrl-g"},
+	}
+
+	for _, tc := range accepted {
+		t.Run(tc.name, func(t *testing.T) {
+			key, err := ParseKey(tc.spec)
+			if err != nil {
+				t.Fatalf("ParseKey(%q): %v", tc.spec, err)
+			}
+
+			if got := key.String(); got != tc.expected {
+				t.Errorf("ParseKey(%q) = %q, want %q", tc.spec, got, tc.expected)
+			}
+		})
+	}
+
+	rejected := []struct {
+		name string
+		spec string
+	}{
+		{name: "empty", spec: ""},
+		{name: "only whitespace", spec: "   "},
+		{name: "two letters", spec: "ctrl-ab"},
+		{name: "a digit", spec: "ctrl-1"},
+		{name: "punctuation", spec: "ctrl-]"},
+		{name: "a named key", spec: "ctrl-space"},
+		{name: "no letter at all", spec: "ctrl-"},
+		{name: "interrupt", spec: "ctrl-c"},
+		{name: "end of file", spec: "ctrl-d"},
+		{name: "return", spec: "ctrl-m"},
+		{name: "tab", spec: "ctrl-i"},
+		{name: "suspend", spec: "ctrl-z"},
+		{name: "flow control", spec: "ctrl-s"},
+	}
+
+	for _, tc := range rejected {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			if _, err := ParseKey(tc.spec); !errors.Is(err, ErrUnknownKey) {
+				t.Errorf("ParseKey(%q) error = %v, want ErrUnknownKey", tc.spec, err)
+			}
+		})
+	}
+}
+
+// TestRenderBindsTheChosenKey pins the two spellings apart: zsh takes caret
+// notation and bash takes readline's, and getting either wrong leaves a block
+// that loads without error and binds nothing.
+func TestRenderBindsTheChosenKey(t *testing.T) {
+	key, err := ParseKey("ctrl-t")
+	if err != nil {
+		t.Fatalf("ParseKey: %v", err)
+	}
+
+	zsh := Render(Zsh, "/usr/local/bin/ext", key)
+	if !strings.Contains(zsh, `bindkey '^T' _ext_picker`) {
+		t.Errorf("zsh block does not bind ^T:\n%s", zsh)
+	}
+
+	if strings.Contains(zsh, "^G") {
+		t.Errorf("zsh block still mentions the default ^G:\n%s", zsh)
+	}
+
+	bash := Render(Bash, "/usr/local/bin/ext", key)
+	if !strings.Contains(bash, `"\C-t"`) {
+		t.Errorf(`bash block does not bind \C-t:`+"\n%s", bash)
+	}
+
+	if strings.Contains(bash, `\C-g`) {
+		t.Errorf(`bash block still mentions the default \C-g:`+"\n%s", bash)
+	}
+}
+
+// TestRenderDefaultsAZeroKey keeps a caller who never parsed one from splicing
+// a NUL byte into somebody's profile.
+func TestRenderDefaultsAZeroKey(t *testing.T) {
+	if got, expected := Render(Zsh, "/usr/local/bin/ext", Key{}), "bindkey '^G' _ext_picker"; !strings.Contains(got, expected) {
+		t.Errorf("a zero Key did not render the default binding:\n%s", got)
 	}
 }

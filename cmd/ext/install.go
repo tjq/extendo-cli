@@ -22,18 +22,22 @@ const profileMode = 0o644
 func newInstallCmd() *cobra.Command {
 	profile := ""
 	isUninstall := false
+	keySpec := shell.DefaultKey.String()
 
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Write the managed block into your shell profile",
 		Long: "install adds a block to your shell profile that puts ext on PATH and\n" +
-			"binds ctrl-G to the picker.\n\n" +
+			"binds a key to the picker.\n\n" +
+			"The key is ctrl-G unless --key names another; ext binds ctrl plus a\n" +
+			"letter, and refuses the handful the terminal needs for itself, such as\n" +
+			"ctrl-C.\n\n" +
 			"The block is delimited by markers, so re-running install after an upgrade\n" +
 			"replaces it rather than adding a second copy, and --uninstall takes it back\n" +
 			"out leaving the rest of the file alone.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runInstall(cmd, profile, isUninstall)
+			return runInstall(cmd, profile, keySpec, isUninstall)
 		},
 	}
 
@@ -41,11 +45,13 @@ func newInstallCmd() *cobra.Command {
 		"edit this file instead of the profile belonging to $SHELL")
 	cmd.Flags().BoolVar(&isUninstall, "uninstall", false,
 		"remove the managed block instead of writing it")
+	cmd.Flags().StringVar(&keySpec, "key", keySpec,
+		"bind this chord instead, written like \"ctrl-t\"")
 
 	return cmd
 }
 
-func runInstall(cmd *cobra.Command, profile string, isUninstall bool) error {
+func runInstall(cmd *cobra.Command, profile, keySpec string, isUninstall bool) error {
 	path, err := resolveProfile(profile)
 	if err != nil {
 		return err
@@ -60,16 +66,23 @@ func runInstall(cmd *cobra.Command, profile string, isUninstall bool) error {
 		return uninstall(cmd, path, existing)
 	}
 
-	return install(cmd, path, existing)
+	// Parsed after the uninstall branch: taking the block back out does not
+	// bind anything, so a bad --key should not stand in the way of removing it.
+	key, err := shell.ParseKey(keySpec)
+	if err != nil {
+		return err
+	}
+
+	return install(cmd, path, existing, key)
 }
 
-func install(cmd *cobra.Command, path, existing string) error {
+func install(cmd *cobra.Command, path, existing string, key shell.Key) error {
 	exe, err := executablePath()
 	if err != nil {
 		return fmt.Errorf("locating the ext binary: %w", err)
 	}
 
-	block := shell.Render(shell.Detect(os.Getenv(shellEnv)), exe)
+	block := shell.Render(shell.Detect(os.Getenv(shellEnv)), exe, key)
 	if block == "" {
 		return errUnknownShell()
 	}
@@ -79,7 +92,8 @@ func install(cmd *cobra.Command, path, existing string) error {
 	}
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "✓ wrote the extendo-cli block to %s\n", path)
-	fmt.Fprintf(cmd.ErrOrStderr(), "  open a new terminal, or run: source %s\n", path)
+	fmt.Fprintf(cmd.ErrOrStderr(), "  %s opens the picker; open a new terminal, or run: source %s\n",
+		key, path)
 
 	return nil
 }

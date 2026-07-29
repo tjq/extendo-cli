@@ -27,6 +27,16 @@ Binds ctrl-G to the picker, so it opens over whatever you are typing: pick
 something and the prompt is redrawn with the item on the pasteboard. Open a
 new terminal afterwards, or `source` the file it names.
 
+For a different chord:
+
+```sh
+ext install --key ctrl-t
+```
+
+`ctrl-t`, `^T` and `t` all name the same one. It binds ctrl plus a letter,
+and refuses the few the terminal needs for itself — `ctrl-c`, `ctrl-d`,
+`ctrl-z` and the rest — rather than leaving you without an interrupt.
+
 It appends a managed block to `~/.zshrc` (zsh) or `~/.bash_profile` (bash),
 between `# >>> extendo-cli >>>` markers. Re-running replaces the block rather
 than adding a second, so it is safe after every upgrade, and

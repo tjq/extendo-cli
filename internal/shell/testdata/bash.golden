@@ -1,0 +1,6 @@
+# >>> extendo-cli >>>
+# managed by `ext install` — do not edit; `ext install --uninstall` removes it
+# in ~/.bash_profile: a macOS terminal starts a login shell, which reads this file
+case ":$PATH:" in *":/opt/homebrew/bin:"*) ;; *) export PATH="/opt/homebrew/bin:$PATH" ;; esac
+bind -x '"\C-g": "/opt/homebrew/bin/ext"' 2>/dev/null || true
+# <<< extendo-cli <<<

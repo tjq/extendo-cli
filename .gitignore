@@ -1,0 +1,14 @@
+# The built binary, at the repo root only — a bare "ext" would also swallow
+# the cmd/ext source directory.
+/ext
+dist/
+
+# Generated at release time by goreleaser's before-hooks.
+/completions/
+
+# Planning artifacts. Kept on disk, out of the published repo, which carries
+# only what builds and ships.
+/docs/
+
+# Finder metadata, which records directory listings and belongs in no repo.
+.DS_Store

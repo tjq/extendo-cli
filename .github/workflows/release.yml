@@ -1,0 +1,38 @@
+name: release
+
+# Tag-driven: pushing v* is what cuts a release and updates the tap.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    # macOS, because the release's before-hooks run the test suite and the
+    # picker's tests are for a macOS tool.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # GoReleaser builds the changelog from history, which a shallow
+          # clone does not have.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Publishes the release on this repo.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pushes the cask to tjq/homebrew-tap, which the default token cannot
+          # reach: it is scoped to this repo only. See README.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

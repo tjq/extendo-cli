@@ -1,0 +1,34 @@
+[
+  {
+    "id": "BBBBBBBB-2222-2222-2222-222222222222",
+    "kind": "text",
+    "label": "tyler@example.com",
+    "createdAt": "2025-07-14T15:33:20Z",
+    "pinned": true,
+    "secret": ""
+  },
+  {
+    "id": "AAAAAAAA-1111-1111-1111-111111111111",
+    "kind": "text",
+    "label": "git rebase -i HEAD~3",
+    "createdAt": "2025-07-15T19:20:00Z",
+    "pinned": false,
+    "secret": ""
+  },
+  {
+    "id": "CCCCCCCC-3333-3333-3333-333333333333",
+    "kind": "image",
+    "label": "Image 3×2 · PNG",
+    "createdAt": "2025-07-13T11:46:40Z",
+    "pinned": false,
+    "secret": ""
+  },
+  {
+    "id": "DDDDDDDD-4444-4444-4444-444444444444",
+    "kind": "file",
+    "label": "report-final.pdf",
+    "createdAt": "2025-07-12T08:00:00Z",
+    "pinned": false,
+    "secret": ""
+  }
+]

@@ -1,0 +1,5 @@
+N  KIND   LABEL                 AGE  PIN
+1  text   tyler@example.com     1d   📌
+2  text   git rebase -i HEAD~3  1h
+3  image  Image 3×2 · PNG       2d
+4  file   report-final.pdf      3d

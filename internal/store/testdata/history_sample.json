@@ -1,0 +1,12 @@
+[
+  {"id":"AAAAAAAA-1111-1111-1111-111111111111","createdAt":774300000,"isPinned":false,
+   "sourceBundleIdentifier":"com.apple.Terminal","futureField":{"x":1},
+   "representations":[{"type":"public.utf8-plain-text","payload":{"kind":"inline","data":"Z2l0IHJlYmFzZSAtaSBIRUFEfjM="}}]},
+  {"id":"BBBBBBBB-2222-2222-2222-222222222222","createdAt":774200000,"isPinned":true,
+   "representations":[{"type":"public.utf8-plain-text","payload":{"kind":"inline","data":"dHlsZXJAZXhhbXBsZS5jb20="}}]},
+  {"id":"CCCCCCCC-3333-3333-3333-333333333333","createdAt":774100000,"isPinned":false,
+   "representations":[{"type":"public.png","payload":{"kind":"external","path":"CCCCCCCC-3333-3333-3333-333333333333/rep-0.bin"}},
+                      {"type":"public.utf8-plain-text","payload":{"kind":"inline","data":"c2NyZWVuc2hvdA=="}}]},
+  {"id":"DDDDDDDD-4444-4444-4444-444444444444","createdAt":774000000,"isPinned":false,
+   "representations":[{"type":"public.file-url","payload":{"kind":"inline","data":"ZmlsZTovLy9Vc2Vycy90anEvcmVwb3J0LWZpbmFsLnBkZg=="}}]}
+]

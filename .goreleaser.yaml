@@ -1,0 +1,103 @@
+version: 2
+
+project_name: ext
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+    # The cask ships the completions cobra already knows how to print. sh -c
+    # because hooks are exec'd, so the redirect needs a shell of its own.
+    - mkdir -p completions
+    - sh -c "go run ./cmd/ext completion bash > completions/ext.bash"
+    - sh -c "go run ./cmd/ext completion zsh  > completions/_ext"
+    - sh -c "go run ./cmd/ext completion fish > completions/ext.fish"
+
+builds:
+  # darwin only, and deliberately: the picker reads the history extendo keeps
+  # under ~/Library, so a Linux build would compile cleanly and then never find
+  # a store to open. See internal/store.
+  - id: ext
+    main: ./cmd/ext
+    binary: ext
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # -X main.version is the stamp cmd/ext/version.go documents; without it the
+    # binary reports "dev".
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: ext
+    ids:
+      - ext
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - completions/*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+homebrew_casks:
+  # A cask rather than a formula: this ships a prebuilt macOS binary, and a cask
+  # is what strips the com.apple.quarantine attribute that would otherwise make
+  # Gatekeeper refuse to run an unsigned download.
+  - name: ext
+    binaries:
+      - ext
+    homepage: https://github.com/tjq/extendo-cli
+    description: Terminal picker for the clipboard history the extendo macOS app keeps
+    license: MIT
+    repository:
+      owner: tjq
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaser
+      email: noreply@github.com
+    commit_msg_template: "ext: {{ .Tag }}"
+    completions:
+      bash: completions/ext.bash
+      zsh: completions/_ext
+      fish: completions/ext.fish
+    # The release binaries are unsigned, so Gatekeeper quarantines them on
+    # download and the first run dies with "developer cannot be verified".
+    # Stripping the attribute at install time is what makes `brew install` mean
+    # the binary actually runs. Drop this once the builds are signed.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ext"]
+          end
+    # brew puts ext on PATH already, so the managed shell block is only worth
+    # running for the ctrl-G binding.
+    caveats: |
+      ext is on your PATH already. To bind ctrl-G to the picker, run:
+
+        ext install
+
+      Then open a new terminal, or source the profile it names.

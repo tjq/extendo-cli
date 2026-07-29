@@ -465,6 +465,72 @@ func TestGetCopiesTextByIDPrefix(t *testing.T) {
 	}
 }
 
+// TestQuietSuppressesConfirmations covers the flag the hotkey bindings pass. A
+// key pressed over a password prompt or a half-typed command has no business
+// printing into that screen, and a confirmation line on stderr both scrolls it
+// and stays in scrollback.
+//
+// The work still has to happen: --quiet is about what is printed, not about
+// what is done.
+func TestQuietSuppressesConfirmations(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "get", args: []string{"get", "1"}},
+		{name: "pin", args: []string{"pin", "1"}},
+		{name: "delete", args: []string{"delete", "1"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			loud := run(t, fixtureDir(t), &fakeRunner{}, tc.args...)
+			if loud.err != nil {
+				t.Fatalf("%v: %v", tc.args, loud.err)
+			}
+
+			if loud.stderr == "" {
+				t.Fatalf("%v printed nothing without --quiet; the test proves nothing", tc.args)
+			}
+
+			runner := &fakeRunner{}
+
+			got := run(t, fixtureDir(t), runner, append(tc.args, "--quiet")...)
+			if got.err != nil {
+				t.Fatalf("%v --quiet: %v", tc.args, got.err)
+			}
+
+			if got.stderr != "" {
+				t.Errorf("%v --quiet printed %q", tc.args, got.stderr)
+			}
+		})
+	}
+}
+
+// TestQuietStillReportsErrors is the line the flag draws. The zsh widget shows
+// whatever the picker printed on the status line, so a copy that failed still
+// reaches the user — silencing the failure along with the confirmation would
+// leave them pasting whatever was on the pasteboard before.
+func TestQuietStillReportsErrors(t *testing.T) {
+	got := run(t, fixtureDir(t), &fakeRunner{}, "get", "99", "--quiet")
+	if got.err == nil {
+		t.Fatal("get 99 --quiet returned nil error")
+	}
+}
+
+// TestQuietDoesNotTouchThePayload keeps the flag off stdout. `--print` writes
+// the item itself there, and a flag about status lines must not silence it.
+func TestQuietDoesNotTouchThePayload(t *testing.T) {
+	got := run(t, fixtureDir(t), &fakeRunner{}, "get", "bbbb", "--print", "--quiet")
+	if got.err != nil {
+		t.Fatalf("get bbbb --print --quiet: %v", got.err)
+	}
+
+	if got.stdout != "tyler@example.com" {
+		t.Errorf("stdout = %q, expected the item text", got.stdout)
+	}
+}
+
 // TestGetConfirmationHidesSecret guards the one place a value fragment would
 // outlive the command: stderr, which lands in scrollback, `2>` redirects, and
 // CI logs. The confirmation names the category and nothing derived from the

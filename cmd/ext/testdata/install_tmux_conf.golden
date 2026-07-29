@@ -1,0 +1,6 @@
+# >>> extendo-cli >>>
+# managed by `ext install --tmux` — do not edit; `ext install --tmux --uninstall` removes it
+# a tmux binding is read before the pane's own program sees the key, so this opens
+# over a password prompt or an editor — where a shell binding cannot fire at all
+bind-key -n C-g display-popup -E -w 80% -h 18 '"/opt/homebrew/bin/ext" --quiet'
+# <<< extendo-cli <<<

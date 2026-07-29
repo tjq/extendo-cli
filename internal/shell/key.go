@@ -93,6 +93,13 @@ func (k Key) readline() string {
 	return `\C-` + string(k.resolved())
 }
 
+// tmux is tmux's spelling. Its key names are case-sensitive — `C-G` is ctrl
+// plus shift plus G, which is a different chord — so the letter stays
+// lowercase here, unlike zsh's caret notation.
+func (k Key) tmux() string {
+	return "C-" + string(k.resolved())
+}
+
 // resolved reads the letter, standing in the default for a zero Key so that a
 // caller who forgot to parse one gets ctrl-G rather than a NUL byte spliced
 // into somebody's profile.

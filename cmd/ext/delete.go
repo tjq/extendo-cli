@@ -26,7 +26,7 @@ func newDeleteCmd(s *store.Store) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.ErrOrStderr(), "✗ deleted #%d\n", position)
+			fmt.Fprintf(confirmWriter(cmd), "✗ deleted #%d\n", position)
 
 			return nil
 		},

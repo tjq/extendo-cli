@@ -4,6 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -22,6 +26,7 @@ const profileMode = 0o644
 func newInstallCmd() *cobra.Command {
 	profile := ""
 	isUninstall := false
+	isTmux := false
 	keySpec := shell.DefaultKey.String()
 
 	cmd := &cobra.Command{
@@ -32,12 +37,16 @@ func newInstallCmd() *cobra.Command {
 			"The key is ctrl-G unless --key names another; ext binds ctrl plus a\n" +
 			"letter, and refuses the handful the terminal needs for itself, such as\n" +
 			"ctrl-C.\n\n" +
+			"--tmux writes a tmux binding to ~/.tmux.conf instead. A shell binding\n" +
+			"only fires at the shell's own prompt; a tmux one fires while a program in\n" +
+			"the pane owns the terminal too, so the picker opens over a password\n" +
+			"prompt, an editor, or a REPL.\n\n" +
 			"The block is delimited by markers, so re-running install after an upgrade\n" +
 			"replaces it rather than adding a second copy, and --uninstall takes it back\n" +
 			"out leaving the rest of the file alone.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runInstall(cmd, profile, keySpec, isUninstall)
+			return runInstall(cmd, profile, keySpec, isUninstall, isTmux)
 		},
 	}
 
@@ -47,12 +56,14 @@ func newInstallCmd() *cobra.Command {
 		"remove the managed block instead of writing it")
 	cmd.Flags().StringVar(&keySpec, "key", keySpec,
 		"bind this chord instead, written like \"ctrl-t\"")
+	cmd.Flags().BoolVar(&isTmux, "tmux", false,
+		"bind the key in ~/.tmux.conf, where it fires over a running program too")
 
 	return cmd
 }
 
-func runInstall(cmd *cobra.Command, profile, keySpec string, isUninstall bool) error {
-	path, err := resolveProfile(profile)
+func runInstall(cmd *cobra.Command, profile, keySpec string, isUninstall, isTmux bool) error {
+	path, err := resolveTarget(profile, isTmux)
 	if err != nil {
 		return err
 	}
@@ -63,7 +74,7 @@ func runInstall(cmd *cobra.Command, profile, keySpec string, isUninstall bool) e
 	}
 
 	if isUninstall {
-		return uninstall(cmd, path, existing)
+		return uninstall(cmd, path, existing, isTmux)
 	}
 
 	// Parsed after the uninstall branch: taking the block back out does not
@@ -71,6 +82,10 @@ func runInstall(cmd *cobra.Command, profile, keySpec string, isUninstall bool) e
 	key, err := shell.ParseKey(keySpec)
 	if err != nil {
 		return err
+	}
+
+	if isTmux {
+		return installTmux(cmd, path, existing, key)
 	}
 
 	return install(cmd, path, existing, key)
@@ -98,7 +113,35 @@ func install(cmd *cobra.Command, path, existing string, key shell.Key) error {
 	return nil
 }
 
-func uninstall(cmd *cobra.Command, path, existing string) error {
+// installTmux writes the popup binding into a tmux config.
+//
+// The tmux version is checked before anything is written. A binding using
+// display-popup is an unknown command to a tmux older than 3.2, and an error in
+// a config file stops tmux reading the rest of it — so an unchecked install
+// would silently cost the user every setting below the block.
+func installTmux(cmd *cobra.Command, path, existing string, key shell.Key) error {
+	if err := checkTmux(); err != nil {
+		return err
+	}
+
+	exe, err := executablePath()
+	if err != nil {
+		return fmt.Errorf("locating the ext binary: %w", err)
+	}
+
+	if err := writeProfile(path, shell.Apply(existing, shell.RenderTmux(exe, key))); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.ErrOrStderr(), "✓ wrote the extendo-cli block to %s\n", path)
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"  %s opens the picker in a popup, over whatever the pane is running\n", key)
+	fmt.Fprintf(cmd.ErrOrStderr(), "  reload tmux with: tmux source-file %s\n", path)
+
+	return nil
+}
+
+func uninstall(cmd *cobra.Command, path, existing string, isTmux bool) error {
 	updated, wasInstalled := shell.Remove(existing)
 	if !wasInstalled {
 		fmt.Fprintf(cmd.ErrOrStderr(), "no extendo-cli block in %s\n", path)
@@ -112,15 +155,35 @@ func uninstall(cmd *cobra.Command, path, existing string) error {
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "✓ removed the extendo-cli block from %s\n", path)
 
+	// A shell reads its profile at startup, so a new terminal is already clean.
+	// tmux holds its bindings in a running server, which re-reading the config
+	// does not clear: the binding survives until it is unbound or the server
+	// stops, and saying so beats leaving the user to find that out by pressing
+	// the key.
+	//
+	// The chord is left as a placeholder rather than filled in. Uninstall does
+	// not parse --key — deliberately, so a bad one cannot stand in the way of a
+	// removal — and printing the default at someone who bound ctrl-T would be a
+	// command that silently unbinds nothing.
+	if isTmux {
+		fmt.Fprintln(cmd.ErrOrStderr(),
+			"  the running tmux server keeps the binding until it exits; "+
+				"drop it now with: tmux unbind-key -n C-<key>")
+	}
+
 	return nil
 }
 
 // shellEnv names the variable every shell exports with its own path.
 const shellEnv = "SHELL"
 
-// resolveProfile picks the file to edit: the one the user named, or the profile
-// belonging to $SHELL.
-func resolveProfile(profile string) (string, error) {
+// resolveTarget picks the file to edit: the one the user named, the tmux config
+// under --tmux, or the profile belonging to $SHELL.
+//
+// --tmux never consults $SHELL. A tmux binding is the same line whatever shell
+// runs inside the pane, so this is the one route to the picker that works under
+// fish — which install otherwise has to turn down.
+func resolveTarget(profile string, isTmux bool) (string, error) {
 	if profile != "" {
 		return profile, nil
 	}
@@ -128,6 +191,10 @@ func resolveProfile(profile string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("locating your home directory: %w", err)
+	}
+
+	if isTmux {
+		return tmuxConf(home), nil
 	}
 
 	path, err := shell.ProfilePath(shell.Detect(os.Getenv(shellEnv)), home)
@@ -140,6 +207,115 @@ func resolveProfile(profile string) (string, error) {
 	}
 
 	return path, nil
+}
+
+// tmuxConf picks which config file to write.
+//
+// tmux 3.1 and later read ~/.config/tmux/tmux.conf as well as ~/.tmux.conf, and
+// someone who keeps one there has moved deliberately. Writing into the file
+// that already exists puts the binding where they will find it; ~/.tmux.conf is
+// the fallback, and the file tmux has always read.
+func tmuxConf(home string) string {
+	xdg := filepath.Join(home, ".config", "tmux", "tmux.conf")
+	if _, err := os.Stat(xdg); err == nil {
+		return xdg
+	}
+
+	return filepath.Join(home, ".tmux.conf")
+}
+
+// tmuxVersion reports what `tmux -V` prints. It is a variable so tests can drive
+// the --tmux branch on a machine with no tmux, or an old one.
+var tmuxVersion = func() (string, error) {
+	out, err := exec.Command("tmux", "-V").Output()
+	if err != nil {
+		return "", err
+	}
+
+	return string(out), nil
+}
+
+// checkTmux refuses to write the popup binding into a tmux that cannot run it.
+// See installTmux for why this is worth a check rather than a broken key.
+func checkTmux() error {
+	out, err := tmuxVersion()
+	if err != nil {
+		return fmt.Errorf("running `tmux -V`: %w — "+
+			"--tmux writes a binding for tmux, which does not appear to be installed", err)
+	}
+
+	version, ok := parseTmuxVersion(out)
+	if !ok {
+		return fmt.Errorf("cannot read a version out of `tmux -V` (%q) — "+
+			"the popup binding needs tmux %s or newer", strings.TrimSpace(out), shell.MinTmux)
+	}
+
+	if version < tmuxVersionOrdinal(shell.MinTmux) {
+		return fmt.Errorf("tmux %s is too old: display-popup arrived in %s, and a binding "+
+			"using it would stop tmux reading the rest of your config",
+			strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(out), "tmux ")), shell.MinTmux)
+	}
+
+	return nil
+}
+
+// parseTmuxVersion turns `tmux -V` output into a comparable number.
+//
+// The version is not a plain decimal: a patch release is "3.2a", and a build
+// from the development branch says "tmux next-3.6". Both carry the major and
+// minor that decide whether display-popup is there, so both are read rather
+// than rejected — a `next` build is newer than the release it is named for, and
+// refusing to install on one would be wrong.
+func parseTmuxVersion(out string) (int, bool) {
+	fields := strings.Fields(out)
+	if len(fields) < 2 {
+		return 0, false
+	}
+
+	major, rest, found := strings.Cut(strings.TrimPrefix(fields[1], "next-"), ".")
+	if !found {
+		return 0, false
+	}
+
+	return versionOrdinal(major, leadingDigits(rest))
+}
+
+// tmuxVersionOrdinal reads a version this package spells itself, where a
+// malformed one is a bug rather than a machine's answer.
+func tmuxVersionOrdinal(version string) int {
+	major, minor, _ := strings.Cut(version, ".")
+
+	ordinal, _ := versionOrdinal(major, minor)
+
+	return ordinal
+}
+
+// versionOrdinal packs a major and minor into one comparable int. The minor is
+// given a hundred values, which is more than tmux has ever used.
+func versionOrdinal(major, minor string) (int, bool) {
+	majorN, err := strconv.Atoi(major)
+	if err != nil {
+		return 0, false
+	}
+
+	minorN, err := strconv.Atoi(minor)
+	if err != nil {
+		return 0, false
+	}
+
+	return majorN*100 + minorN, true
+}
+
+// leadingDigits returns the digits s starts with, dropping the patch letter a
+// tmux minor version can carry.
+func leadingDigits(s string) string {
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return s[:i]
+		}
+	}
+
+	return s
 }
 
 // errUnknownShell reports a $SHELL there is no block to write for.

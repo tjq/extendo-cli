@@ -108,6 +108,66 @@ func TestDoctorReportsAHealthyInstall(t *testing.T) {
 	}
 }
 
+// TestDoctorTmuxRow answers the question the row was added for: why the hotkey
+// does nothing at a `sudo` password prompt. A tmux user without the binding gets
+// pointed at it; someone who does not use tmux is told nothing is missing,
+// because for them nothing is.
+func TestDoctorTmuxRow(t *testing.T) {
+	t.Run("no tmux is not a warning", func(t *testing.T) {
+		healthyDoctor(t)
+
+		got := run(t, fixtureDir(t), runningApp(), "doctor")
+		if got.err != nil {
+			t.Fatalf("doctor: %v\n%s", got.err, got.stdout)
+		}
+
+		if !strings.Contains(got.stdout, "tmux is not installed") {
+			t.Errorf("report does not mention tmux:\n%s", got.stdout)
+		}
+
+		if strings.Contains(got.stdout, markWarn) {
+			t.Errorf("a machine without tmux got a warning:\n%s", got.stdout)
+		}
+	})
+
+	t.Run("tmux without the binding", func(t *testing.T) {
+		pinProfile(t, true)
+		pinLookPath(t, "pbcopy", "osascript", "tmux")
+
+		got := run(t, fixtureDir(t), runningApp(), "doctor")
+		if got.err != nil {
+			t.Fatalf("doctor: %v\n%s", got.err, got.stdout)
+		}
+
+		if !strings.Contains(got.stdout, "ext install --tmux") {
+			t.Errorf("report does not point at the tmux binding:\n%s", got.stdout)
+		}
+
+		if !strings.Contains(got.stdout, markWarn) {
+			t.Errorf("report does not mark the missing binding:\n%s", got.stdout)
+		}
+	})
+
+	t.Run("tmux with the binding", func(t *testing.T) {
+		pinProfile(t, true)
+		pinLookPath(t, "pbcopy", "osascript", "tmux")
+
+		conf := shell.Apply("", shell.RenderTmux("/opt/homebrew/bin/ext", shell.DefaultKey))
+		if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".tmux.conf"), []byte(conf), 0o644); err != nil {
+			t.Fatalf("write tmux conf: %v", err)
+		}
+
+		got := run(t, fixtureDir(t), runningApp(), "doctor")
+		if got.err != nil {
+			t.Fatalf("doctor: %v\n%s", got.err, got.stdout)
+		}
+
+		if strings.Contains(got.stdout, markWarn) || strings.Contains(got.stdout, markFail) {
+			t.Errorf("a fully configured machine carries a warning:\n%s", got.stdout)
+		}
+	})
+}
+
 // TestDoctorWarnsWhenTheAppIsNotRunning is the warning-versus-failure line: the
 // history on disk is readable whether or not the app is up, so `ext` still
 // works and doctor still exits 0.

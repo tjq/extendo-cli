@@ -101,3 +101,9 @@ homebrew_casks:
         ext install
 
       Then open a new terminal, or source the profile it names.
+
+      A shell binding only fires at the shell's own prompt. To reach the
+      picker while a program owns the terminal — a password prompt, an
+      editor, a REPL — bind it in tmux instead:
+
+        ext install --tmux

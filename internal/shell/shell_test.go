@@ -127,19 +127,19 @@ func TestBindingTargetsTheBinaryByPath(t *testing.T) {
 	}{
 		{
 			name: "zsh", kind: Zsh, exePath: brewPath,
-			expected: `_ext_picker() { "/opt/homebrew/bin/ext" </dev/tty >/dev/tty; zle reset-prompt }`,
+			expected: `msg="$("/opt/homebrew/bin/ext" --quiet </dev/tty 2>&1 >/dev/tty)"`,
 		},
 		{
 			name: "zsh, renamed binary", kind: Zsh, exePath: renamedPath,
-			expected: `_ext_picker() { "/Users/x/go/bin/ext-dev" </dev/tty >/dev/tty; zle reset-prompt }`,
+			expected: `msg="$("/Users/x/go/bin/ext-dev" --quiet </dev/tty 2>&1 >/dev/tty)"`,
 		},
 		{
 			name: "bash", kind: Bash, exePath: brewPath,
-			expected: `bind -x '"\C-g": "/opt/homebrew/bin/ext"' 2>/dev/null || true`,
+			expected: `bind -x '"\C-g": "/opt/homebrew/bin/ext" --quiet' 2>/dev/null || true`,
 		},
 		{
 			name: "bash, renamed binary", kind: Bash, exePath: renamedPath,
-			expected: `bind -x '"\C-g": "/Users/x/go/bin/ext-dev"' 2>/dev/null || true`,
+			expected: `bind -x '"\C-g": "/Users/x/go/bin/ext-dev" --quiet' 2>/dev/null || true`,
 		},
 	}
 
@@ -168,7 +168,7 @@ func TestBindingTargetsTheBinaryByPath(t *testing.T) {
 func TestBindingQuotesAwkwardPaths(t *testing.T) {
 	block := Render(Zsh, "/Users/x/Application Support/ext$dev", DefaultKey)
 
-	expected := `_ext_picker() { "/Users/x/Application Support/ext\$dev" </dev/tty >/dev/tty; zle reset-prompt }`
+	expected := `msg="$("/Users/x/Application Support/ext\$dev" --quiet </dev/tty 2>&1 >/dev/tty)"`
 	if !strings.Contains(block, expected) {
 		t.Errorf("block does not carry %q:\n%s", expected, block)
 	}

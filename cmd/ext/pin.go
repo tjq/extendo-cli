@@ -31,7 +31,7 @@ func newPinCmd(s *store.Store) *cobra.Command {
 				status = pinMark + " pinned"
 			}
 
-			fmt.Fprintf(cmd.ErrOrStderr(), "%s #%d\n", status, position)
+			fmt.Fprintf(confirmWriter(cmd), "%s #%d\n", status, position)
 
 			return nil
 		},

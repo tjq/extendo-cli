@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"slices"
 
@@ -62,6 +63,8 @@ func newRootCmd(s *store.Store, r clip.Runner) *cobra.Command {
 		"draw the picker with plain ASCII stand-ins instead of symbols")
 	root.PersistentFlags().BoolVar(&isNerd, "nerd", false,
 		"draw the picker with Nerd Font icons, which need a patched font")
+	root.PersistentFlags().BoolP(quietFlag, "q", false,
+		"do not print the ✓ confirmation line; errors are still reported")
 
 	root.AddCommand(
 		newListCmd(s),
@@ -102,6 +105,30 @@ func isEnvOn(name string) bool {
 	return value != "" && value != "0"
 }
 
+// quietFlag names the persistent flag that suppresses confirmation lines.
+const quietFlag = "quiet"
+
+// confirmWriter returns where a command's ✓ line goes: stderr, or nowhere under
+// --quiet.
+//
+// It suppresses confirmations and not errors, which is the distinction the flag
+// is for. The hotkey bindings `ext install` writes pass it because a key pressed
+// over a password prompt or a half-typed command has no business printing
+// anything into that screen — but a copy that actually failed still has to say
+// so, and the zsh widget puts that text on the status line rather than in
+// scrollback.
+//
+// A lookup failure means no such flag, which only happens if a command is built
+// outside the root: stderr is the safe answer, since the cost of getting it
+// wrong is a line of output rather than a silent failure.
+func confirmWriter(cmd *cobra.Command) io.Writer {
+	if isQuiet, err := cmd.Flags().GetBool(quietFlag); err == nil && isQuiet {
+		return io.Discard
+	}
+
+	return cmd.ErrOrStderr()
+}
+
 // runPicker opens the picker and copies whatever the user chose.
 //
 // The copy happens here rather than inside the picker so that it runs after the
@@ -134,12 +161,12 @@ func runPicker(cmd *cobra.Command, s *store.Store, r clip.Runner, opts tui.Optio
 	}
 
 	if position == 0 {
-		fmt.Fprintf(cmd.ErrOrStderr(), "✓ copied (%s)\n", label)
+		fmt.Fprintf(confirmWriter(cmd), "✓ copied (%s)\n", label)
 
 		return nil
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "✓ copied #%d (%s)\n", position, label)
+	fmt.Fprintf(confirmWriter(cmd), "✓ copied #%d (%s)\n", position, label)
 
 	return nil
 }

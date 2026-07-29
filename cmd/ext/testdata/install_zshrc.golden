@@ -4,7 +4,7 @@ export EDITOR=vim
 # managed by `ext install` — do not edit; `ext install --uninstall` removes it
 # in ~/.zshrc rather than ~/.zprofile: the ^G widget below needs an interactive shell
 case ":$PATH:" in *":/opt/homebrew/bin:"*) ;; *) export PATH="/opt/homebrew/bin:$PATH" ;; esac
-_ext_picker() { "/opt/homebrew/bin/ext" </dev/tty >/dev/tty; zle reset-prompt }
+_ext_picker() { local msg; msg="$("/opt/homebrew/bin/ext" --quiet </dev/tty 2>&1 >/dev/tty)"; zle reset-prompt; if [[ -n $msg ]]; then zle -M "$msg"; fi }
 zle -N _ext_picker
 bindkey '^G' _ext_picker
 # <<< extendo-cli <<<

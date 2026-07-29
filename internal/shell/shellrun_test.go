@@ -42,6 +42,11 @@ func writeBlock(t *testing.T, k Kind, exePath string) string {
 
 // fakeExt writes an executable that announces itself, under whatever name the
 // caller wants it installed as.
+//
+// It announces itself on both streams. The bash binding runs it with neither
+// redirected, and the zsh widget sends its stdout to the terminal and captures
+// only its stderr — so a marker on one stream alone would leave one of the two
+// tests with nothing to look at.
 func fakeExt(t *testing.T, name string) string {
 	t.Helper()
 
@@ -51,7 +56,7 @@ func fakeExt(t *testing.T, name string) string {
 	}
 
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\necho picked\n"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho picked\necho picked >&2\n"), 0o755); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 
@@ -101,13 +106,22 @@ func TestRenderedBlocksParse(t *testing.T) {
 	}
 }
 
-// TestZshWidgetRunsARenamedBinary is the regression this whole change is for.
-// The binary is installed as `ext-dev`, nothing named `ext` is on PATH, and the
-// widget still has to run it — which the previous `command ext` could not.
+// TestZshWidgetRunsARenamedBinary is the regression the binding-by-path change
+// was for. The binary is installed as `ext-dev`, nothing named `ext` is on PATH,
+// and the widget still has to run it — which the previous `command ext` could
+// not.
 //
-// The widget's body is run with its terminal redirections and `zle
-// reset-prompt` taken out: `go test` has no controlling terminal, and the
-// command in front of them is the part under test.
+// It now also pins the redirection order, which is the part of the widget that
+// is easy to get backwards. `2>&1 >/dev/tty` captures stderr and puts stdout on
+// the terminal; the intuitive-looking `>/dev/tty 2>&1` puts both on the terminal
+// and captures nothing — which would print the picker's errors into whatever
+// screen the user pressed the key over, the one thing the widget exists to
+// avoid. The fake ext writes its marker to stderr, so a block with the
+// redirections the wrong way round captures nothing and this test fails.
+//
+// The body is run outside zle, so `/dev/tty` becomes `/dev/null` — `go test` has
+// no controlling terminal — and the two `zle` calls, which only work inside a
+// widget, are dropped or replaced with a print of the message they were handed.
 func TestZshWidgetRunsARenamedBinary(t *testing.T) {
 	sh := shellPath(t, "zsh")
 
@@ -120,10 +134,11 @@ if whence -p ext >/dev/null; then
   exit 1
 fi
 body=${functions[_ext_picker]}
-body=${body//< \/dev\/tty/}
-body=${body//> \/dev\/tty/}
+body=${body//\/dev\/tty/\/dev\/null}
 body=${body//zle reset-prompt/}
-eval $body
+body=${body//zle -M/print -r --}
+eval "_ext_test() { $body }"
+_ext_test
 `
 
 	out, err := runShell(t, sh, "-f", "-i", "-c", script)
@@ -132,7 +147,39 @@ eval $body
 	}
 
 	if !strings.Contains(out, "picked") {
-		t.Errorf("the widget did not run %s:\n%s", exe, out)
+		t.Errorf("the widget did not run %s, or captured the wrong stream:\n%s", exe, out)
+	}
+}
+
+// TestZshWidgetSaysNothingWhenThePickerDoes is the other half of not disturbing
+// the screen: a run that prints nothing has to leave the widget silent, rather
+// than calling `zle -M` with an empty message.
+func TestZshWidgetSaysNothingWhenThePickerDoes(t *testing.T) {
+	sh := shellPath(t, "zsh")
+
+	quiet := filepath.Join(t.TempDir(), "ext")
+	if err := os.WriteFile(quiet, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write %s: %v", quiet, err)
+	}
+
+	script := `
+source ` + writeBlock(t, Zsh, quiet) + `
+body=${functions[_ext_picker]}
+body=${body//\/dev\/tty/\/dev\/null}
+body=${body//zle reset-prompt/}
+body=${body//zle -M/print -r -- MESSAGE:}
+eval "_ext_test() { $body }"
+_ext_test
+print -r -- done
+`
+
+	out, err := runShell(t, sh, "-f", "-i", "-c", script)
+	if err != nil {
+		t.Fatalf("zsh: %v\n%s", err, out)
+	}
+
+	if strings.Contains(out, "MESSAGE:") {
+		t.Errorf("the widget posted a message for a silent run:\n%s", out)
 	}
 }
 

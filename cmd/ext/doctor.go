@@ -99,6 +99,7 @@ func runDoctor(cmd *cobra.Command, s *store.Store, r clip.Runner) error {
 		toolCheck("pbcopy", "ext puts text back on the pasteboard with it"),
 		toolCheck("osascript", "ext puts images and rich text back with it"),
 		profileCheck(),
+		tmuxCheck(),
 	}
 
 	// The report is printed whatever it says: an exit code on its own names
@@ -218,6 +219,39 @@ func profileCheck() check {
 	data, readErr := os.ReadFile(path)
 	if readErr != nil || !shell.IsInstalled(string(data)) {
 		return warnCheck(name, "no managed block in "+path+" — run `ext install`")
+	}
+
+	return okCheck(name, path)
+}
+
+// tmuxCheck reports on the binding that fires where a shell binding cannot.
+//
+// This row exists to answer one question: why the hotkey does nothing at a
+// `sudo` password prompt. It is not that ext is broken — a `bindkey` widget only
+// runs while the shell's line editor owns the terminal, and at that prompt the
+// foreground process owns it instead. A tmux binding is read first and works
+// there, so the row names it.
+//
+// Everything about it is a warning at most. tmux is not a dependency: the picker
+// and every command work without it, and plenty of people do not use it.
+func tmuxCheck() check {
+	const name = "tmux binding"
+
+	if _, err := lookPath("tmux"); err != nil {
+		return okCheck(name, "tmux is not installed — the shell binding covers the prompt")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return warnCheck(name, "no home directory to look in")
+	}
+
+	path := tmuxConf(home)
+
+	data, readErr := os.ReadFile(path)
+	if readErr != nil || !shell.IsInstalled(string(data)) {
+		return warnCheck(name, "none in "+path+" — `ext install --tmux` adds one, "+
+			"which fires over a password prompt too")
 	}
 
 	return okCheck(name, path)

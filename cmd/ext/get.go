@@ -33,7 +33,7 @@ func newGetCmd(s *store.Store, r clip.Runner) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.ErrOrStderr(), "✓ copied #%d (%s)\n", position, confirmLabel(s, it))
+			fmt.Fprintf(confirmWriter(cmd), "✓ copied #%d (%s)\n", position, confirmLabel(s, it))
 
 			return nil
 		},

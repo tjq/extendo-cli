@@ -48,8 +48,13 @@ const (
 )
 
 // managedNote is the block's first line, so that someone reading their profile
-// months later knows what wrote it and how to take it back out.
-const managedNote = "# managed by `ext install` — do not edit; `ext install --uninstall` removes it"
+// months later knows what wrote it and how to take it back out. flags are the
+// ones that command needs to name this particular file.
+func managedNote(flags string) string {
+	return fmt.Sprintf(
+		"# managed by `ext install%s` — do not edit; `ext install%s --uninstall` removes it",
+		flags, flags)
+}
 
 // Detect maps the value of $SHELL onto the shell ext can configure. Anything
 // else — fish, nushell, an empty environment — is Unknown, which the caller has
@@ -108,7 +113,7 @@ func Render(k Kind, exePath string, key Key) string {
 
 	dir := filepath.Dir(exePath)
 
-	lines := []string{startMarker, managedNote, fileNote(k, key)}
+	lines := []string{startMarker, managedNote(""), fileNote(k, key)}
 
 	// The guard keeps a re-sourced profile from growing $PATH a copy at a time,
 	// which is what a bare export in an rc file does.
@@ -145,6 +150,18 @@ func fileNote(k Kind, key Key) string {
 // was called from afterwards. Bash's readline can only run a command, and a
 // bash old enough to lack `bind -x` must not take the profile down with it.
 //
+// Nothing the picker prints reaches the screen. It is run with --quiet, so a
+// selection is silent, and in zsh the error text it would print on a failure is
+// captured and shown with `zle -M` — which draws below the prompt and is wiped
+// by the next keystroke. The point is that a hotkey pressed over something else
+// on screen leaves that screen as it found it: the alt-screen already restores
+// what the picker drew over, and a confirmation line on stderr would scroll it
+// anyway and stay in scrollback. `ext get` still confirms; the hotkey is the one
+// caller whose whole job is to not disturb anything.
+//
+// The widget ends in `if`, not `[[ ... ]] && zle -M`, because a widget that
+// returns non-zero makes zsh beep — which is its own kind of interruption.
+//
 // Both name the binary by path rather than as `ext`. The name only resolves
 // when the binary is called ext: an alias is not expanded in argument position,
 // and `command` skips aliases outright, so a binary installed under any other
@@ -152,7 +169,7 @@ func fileNote(k Kind, key Key) string {
 // not exist. The path also pins which ext the hotkey runs when another one sits
 // earlier on PATH, which the alias already did for the prompt.
 func binding(k Kind, exePath string, key Key) []string {
-	target := quoted(exePath)
+	target := quoted(exePath) + " " + quietFlag
 
 	if k == Bash {
 		// bind takes the whole binding as one word, so the command it runs is
@@ -162,12 +179,20 @@ func binding(k Kind, exePath string, key Key) []string {
 			singleQuoted(`"`+key.readline()+`": `+target))}
 	}
 
+	// `2>&1 >/dev/tty` in that order sends stderr to the capture and stdout to
+	// the terminal: the redirections are applied left to right, so stderr is
+	// duplicated from the substitution's pipe before stdout is moved off it.
 	return []string{
-		fmt.Sprintf("_ext_picker() { %s </dev/tty >/dev/tty; zle reset-prompt }", target),
+		fmt.Sprintf("_ext_picker() { local msg; msg=\"$(%s </dev/tty 2>&1 >/dev/tty)\"; "+
+			"zle reset-prompt; if [[ -n $msg ]]; then zle -M \"$msg\"; fi }", target),
 		"zle -N _ext_picker",
 		fmt.Sprintf("bindkey '%s' _ext_picker", key.caret()),
 	}
 }
+
+// quietFlag is the flag that turns off the picker's confirmation line. Every
+// binding here passes it: see the note on binding.
+const quietFlag = "--quiet"
 
 // quoted renders a path as a double-quoted shell word. Double rather than
 // single quotes because the block already spells its paths that way, and
